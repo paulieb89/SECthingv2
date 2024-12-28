@@ -55,7 +55,7 @@ def check_and_install_modules():
                 print(f"Failed to install {module}. Please install it manually.")
 
 def import_modules():
-    global chardet, concurrent, requests, BeautifulSoup, tqdm
+    global chardet, concurrent, requests, BeautifulSoup, tqdm, pd
 
     # Third-party modules
     import chardet
@@ -1119,6 +1119,12 @@ def download_equities_archives():
         list(executor.map(download_zip, urls))  # Use list() to ensure all tasks are completed before moving on
 
     print("Downloads completed.")
+    equitytquery = input("Would you like to search? (y)es or (n)o?:").strip()
+    if equitytquery == 'y':
+        equities_second()
+    else:
+        print("Y not pushed. exiting.")
+        exit(1)
 def equities_second():
     gamecat_ascii()
     def parse_zips():
@@ -2128,7 +2134,6 @@ def edgar_third(csv_file, method):
         download_from_crawling(csv_file)
     else:
         print("Unknown method for CSV extraction.")
-
 def fetch_directory(url):
     retries=3
     delay=1
@@ -2153,7 +2158,6 @@ def fetch_directory(url):
             if attempt < retries - 1:  # No sleep til brooklyn
                 time.sleep(delay * (attempt + 1))  # Exponential backoff
     raise Exception(f"Failed to fetch {url} after {retries} retries")
-
 def scrape_subdirectories(sec_url):
     soup = fetch_directory(sec_url)
     rows = soup.find_all('a')
@@ -2205,7 +2209,6 @@ def download_file(url, directory, retries=3, delay=1):
                 time.sleep(delay * (attempt + 1))
     print(f"Failed to download {url} after {retries} retries - The treasure remains elusive")
     return False
-
 def process_cik(cik):
     # The URL where our quest begins
     sec_url_full = f"https://www.sec.gov/Archives/edgar/data/{cik}/"
@@ -2280,7 +2283,6 @@ def process_cik(cik):
 
     print("Download complete for current CIK - The quest for this treasure trove ends.")
     return rows  # Return the rows for further processing if needed
-
 def download_archives(source_dir, filelist_path, urls):
     # Ensure the directory exists
     print(f"Ensuring directory {source_dir} exists...")
