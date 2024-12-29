@@ -1016,55 +1016,68 @@ def download_credit_archives():
     else:
         print("Y not pushed. exiting.")
         exit(1)
+
 def credits_second():
     gamecat_ascii()
 
-    def parse_zips_in_batches(batch_size=100):
-        master = pd.DataFrame()  # Start with an empty dataframe
-        zip_files = sorted(glob.glob(os.path.join(CREDIT_SOURCE_DIR, '*.zip')), key=lambda x: os.path.basename(x))
-        total_files = len(zip_files)
-        results_count = 0
-        
-        print(f"\nStarting to process {total_files} zip files...")
-        for i in range(0, total_files, batch_size):
-            batch = zip_files[i:i+batch_size]
-            for index, zip_file in enumerate(batch, 1):
-                print(f"\nProcessing file {i + index}/{total_files}: {zip_file}")
-                try:
-                    with ZipFile(zip_file, 'r') as zip_ref:
-                        csv_filename = zip_ref.namelist()[0]  # Assuming only one CSV per zip
-                        print(f"Reading CSV file: {csv_filename}")
-                        with zip_ref.open(csv_filename) as csv_file:
-                            df = pd.read_csv(csv_file, low_memory=False)
-                            match_found = False
-                            for column in df.columns:
-                                if column in df.columns and df[column].astype(str).str.contains(search_term, case=False, na=False).any():
-                                    print(f"Matches found in column: {column}")
-                                    matching_rows = df[df[column].astype(str).str.contains(search_term, case=False, na=False)]
-                                    master = pd.concat([master, matching_rows], ignore_index=True)
-                                    results_count += len(matching_rows)
-                                    match_found = True
-                                    print(f"Added {len(matching_rows)} matching rows. Total matches so far: {results_count}")
-                                    break  # We've found a match, no need to check other columns
-                            if not match_found:
-                                print(f"No matches found in {csv_filename}")         
-                except Exception as e:
-                    logging.error(f"Error processing {zip_file}: {e}")
-                    print(f"Error occurred while processing {zip_file}. Continuing to next file.")
-                print(f"Current matches count: {results_count}")
-            
-            # Optionally, save or perform operations on 'master' here if it's getting too large
-        return master, results_count
+    def process_zip(zip_file):
+        results = []
+        try:
+            with ZipFile(zip_file, 'r') as zip_ref:
+                csv_filename = zip_ref.namelist()[0]  # Assuming only one CSV per zip
+                with zip_ref.open(csv_filename) as csv_file:
+                    df = pd.read_csv(csv_file, low_memory=False)
+                    for column in df.columns:
+                        if column in df.columns and df[column].astype(str).str.contains(search_term, case=False, na=False).any():
+                            matching_rows = df[df[column].astype(str).str.contains(search_term, case=False, na=False)]
+                            results.extend(matching_rows.to_dict('records'))  # Convert matching rows to list of dicts
+                            break  # We've found a match, no need to check other columns
+        except Exception as e:
+            logging.error(f"Error processing {zip_file}: {e}")
+        return results, len(results)
 
+    def write_to_csv(results, csv_writer):
+        for row in results:
+            csv_writer.writerow(row)
+
+    # Main execution
     print("Press Enter when you are ready to parse the files, or type 'q' to quit.")
     user_input = input()
     if user_input.lower() != 'q':
         search_term = input("Enter the search term: ").strip()
-        master, final_count = parse_zips_in_batches()
+        
+        zip_files = sorted(glob.glob(os.path.join(CREDIT_SOURCE_DIR, '*.zip')), key=lambda x: os.path.basename(x))
+        total_files = len(zip_files)
+        print(f"\nStarting to process {total_files} zip files with 16 worker threads...")
+
         master_csv_path = os.path.join(CREDIT_SOURCE_DIR, f"filtered_{search_term.replace(' ', '_')}.csv")
-        master.to_csv(master_csv_path, index=False)
-        print(f"\nSaving results to: {master_csv_path}")
-        print(f"Total Matches Found: {final_count}")
+        
+        with open(master_csv_path, 'w', newline='') as csvfile:
+            csv_writer = csv.DictWriter(csvfile, fieldnames=None)  # We'll define fieldnames later
+            header_written = False
+
+            with tqdm(total=total_files, desc="Processing Zips") as pbar:
+                with ThreadPoolExecutor(max_workers=16) as executor:
+                    future_to_zip = {executor.submit(process_zip, zip_file): zip_file for zip_file in zip_files}
+                    
+                    for future in as_completed(future_to_zip):
+                        zip_file = future_to_zip[future]
+                        try:
+                            results, count = future.result()
+                            if results and not header_written:
+                                # Write header only once
+                                csv_writer.fieldnames = results[0].keys()
+                                csv_writer.writeheader()
+                                header_written = True
+                            write_to_csv(results, csv_writer)
+                            pbar.set_postfix({'file': os.path.basename(zip_file), 'matches': count})
+                            pbar.update(1)
+                            print(f"Processed: {zip_file} - Matches found: {count}")
+                        except Exception as e:
+                            print(f"Exception in {zip_file}: {e}")
+                            pbar.update(1)  # Still update progress bar even if there's an error
+
+            print(f"\nSaving results to: {master_csv_path}")
         logging.info(f"Parsing completed. Master file saved as {master_csv_path}")
     else:
         print("Exiting script.")
@@ -1127,58 +1140,69 @@ def download_equities_archives():
         exit(1)
 def equities_second():
     gamecat_ascii()
-    def parse_zips():
-        master = pd.DataFrame()  # Start with an empty dataframe
-        zip_files = sorted(glob.glob(os.path.join(CREDIT_SOURCE_DIR, '*.zip')), key=lambda x: os.path.basename(x))  # Sort by filename to keep dates in order
-        first_file_processed = False
-        first_headers = None
-        total_files = len(zip_files)
-        results_count = 0
-        print(f"\nStarting to process {total_files} zip files...")
-        for index, zip_file in enumerate(zip_files, 1):
-            print(f"\nProcessing file {index}/{total_files}: {zip_file}")
-            try:
-                with ZipFile(zip_file, 'r') as zip_ref:
-                    csv_filename = zip_ref.namelist()[0]  # Assuming only one CSV per zip
-                    print(f"Reading CSV file: {csv_filename}")
-                    with zip_ref.open(csv_filename) as csv_file:
-                        df = pd.read_csv(csv_file, low_memory=False)
-                        if not first_file_processed:
-                            first_headers = df.columns.tolist()
-                            first_file_processed = True
-                        match_found = False
-                        for column in df.columns:
-                            if column in df.columns and df[column].astype(str).str.contains(search_term, case=False, na=False).any():
-                                print(f"Matches found in column: {column}")
-                                matching_rows = df[df[column].astype(str).str.contains(search_term, case=False, na=False)]
-                                master = pd.concat([master, matching_rows], ignore_index=True)
-                                results_count += len(matching_rows)
-                                match_found = True
-                                print(f"Added {len(matching_rows)} matching rows. Total matches so far: {results_count}")
-                                break  # We've found a match, no need to check other columns
-                        if not match_found:
-                            print(f"No matches found in {csv_filename}")         
-            except Exception as e:
-                logging.error(f"Error processing {zip_file}: {e}")
-                print(f"Error occurred while processing {zip_file}. Continuing to next file.")
-            print(f"Current matches count: {results_count}")
-        # If we have processed at least one file, ensure the CSV starts with the first file's headers
-        if first_headers:
-            master = master.reindex(columns=first_headers, fill_value=None)  # Use None or pd.NA instead of pd.np.nan
-        return master, results_count
 
+    def process_zip(zip_file):
+        results = []
+        try:
+            with ZipFile(zip_file, 'r') as zip_ref:
+                csv_filename = zip_ref.namelist()[0]  # Assuming only one CSV per zip
+                with zip_ref.open(csv_filename) as csv_file:
+                    df = pd.read_csv(csv_file, low_memory=False)
+                    for column in df.columns:
+                        if column in df.columns and df[column].astype(str).str.contains(search_term, case=False, na=False).any():
+                            matching_rows = df[df[column].astype(str).str.contains(search_term, case=False, na=False)]
+                            results.extend(matching_rows.to_dict('records'))  # Convert matching rows to list of dicts
+                            break  # We've found a match, no need to check other columns
+        except Exception as e:
+            logging.error(f"Error processing {zip_file}: {e}")
+        return results, len(results)
+
+    def write_to_csv(results, csv_writer):
+        for row in results:
+            csv_writer.writerow(row)
+
+    # Main execution
     print("Press Enter when you are ready to parse the files, or type 'q' to quit.")
     user_input = input()
     if user_input.lower() != 'q':
         search_term = input("Enter the search term: ").strip()
-        master, final_count = parse_zips()
-        master_csv_path = os.path.join(CREDIT_SOURCE_DIR, f"filtered_{search_term.replace(' ', '_')}.csv")
-        master.to_csv(master_csv_path, index=False)
-        print(f"\nSaving results to: {master_csv_path}")
-        print(f"Total Matches Found: {final_count}")
+        
+        zip_files = sorted(glob.glob(os.path.join(EQUITY_SOURCE_DIR, '*.zip')), key=lambda x: os.path.basename(x))
+        total_files = len(zip_files)
+        print(f"\nStarting to process {total_files} zip files with 16 worker threads...")
+
+        master_csv_path = os.path.join(EQUITY_SOURCE_DIR, f"filtered_{search_term.replace(' ', '_')}.csv")
+        
+        with open(master_csv_path, 'w', newline='') as csvfile:
+            csv_writer = csv.DictWriter(csvfile, fieldnames=None)  # We'll define fieldnames later
+            header_written = False
+
+            with tqdm(total=total_files, desc="Processing Zips") as pbar:
+                with ThreadPoolExecutor(max_workers=16) as executor:
+                    future_to_zip = {executor.submit(process_zip, zip_file): zip_file for zip_file in zip_files}
+                    
+                    for future in as_completed(future_to_zip):
+                        zip_file = future_to_zip[future]
+                        try:
+                            results, count = future.result()
+                            if results and not header_written:
+                                # Write header only once
+                                csv_writer.fieldnames = results[0].keys()
+                                csv_writer.writeheader()
+                                header_written = True
+                            write_to_csv(results, csv_writer)
+                            pbar.set_postfix({'file': os.path.basename(zip_file), 'matches': count})
+                            pbar.update(1)
+                            print(f"Processed: {zip_file} - Matches found: {count}")
+                        except Exception as e:
+                            print(f"Exception in {zip_file}: {e}")
+                            pbar.update(1)  # Still update progress bar even if there's an error
+
+            print(f"\nSaving results to: {master_csv_path}")
         logging.info(f"Parsing completed. Master file saved as {master_csv_path}")
     else:
         print("Exiting script.")
+
 def download_ncen_archives():
     BASE_URL = "https://www.sec.gov/files/dera/data/form-n-cen-data-sets/"
     urls = [
@@ -2414,6 +2438,7 @@ def process_zips(url, max_retries=3, timeout=10):
             time.sleep(2 ** attempt)
     return None
 def search_for_swaps(zip_file, verbose=False, debug=True):
+    import tqdm, pandas as pd
     summary = []
     if verbose:
         print(f"Starting search_for_swaps for {zip_file}")
@@ -2446,7 +2471,7 @@ def search_for_swaps(zip_file, verbose=False, debug=True):
             with zip_ref.open('FUND_REPORTED_HOLDING.tsv') as tsvfile:
                 total_rows = sum(1 for _ in tsvfile)  # Count lines for progress estimation
 
-            with tqdm(total=total_rows, desc=f"Processing {zip_file}", unit="row") as pbar:
+            with tqdm.tqdm(total=total_rows, desc=f"Processing {zip_file}", unit="row") as pbar:
                 for chunk in pd.read_csv(zip_ref.open('FUND_REPORTED_HOLDING.tsv'), delimiter='\t', chunksize=chunksize, low_memory=False):
 
                     # Ensure 'FILENAME_TIMESTAMP' column exists, using timestamp from filename
@@ -2581,6 +2606,7 @@ def search_for_swaps(zip_file, verbose=False, debug=True):
     
     return summary
 def main_search(zip_file, search_keyword, verbose=False, looking_for_swaps=False):
+    import tqdm, pandas as pd
     if verbose:
         print(f"Starting search_for_swaps for {zip_file}")
     summary = []
@@ -2613,7 +2639,7 @@ def main_search(zip_file, search_keyword, verbose=False, looking_for_swaps=False
             with zip_ref.open('FUND_REPORTED_HOLDING.tsv') as tsvfile:
                 total_rows = sum(1 for _ in tsvfile)  # Count lines for progress estimation
 
-            with tqdm(total=total_rows, desc=f"Processing {zip_file}", unit="row") as pbar:
+            with tqdm.tqdm(total=total_rows, desc=f"Processing {zip_file}", unit="row") as pbar:
                 for chunk in pd.read_csv(zip_ref.open('FUND_REPORTED_HOLDING.tsv'), delimiter='\t', chunksize=chunksize, low_memory=False):
 
                     # Ensure 'FILENAME_TIMESTAMP' column exists, using timestamp from filename
@@ -2792,6 +2818,7 @@ def write_to_csv(queue, output_file, verbose=False):
                 if verbose:
                     print(f"Error writing to CSV: {e}")
 def main(search_keywords, verbose=False, search_for_swaps=False):
+    import tqdm, concurrent.futures, pandas as pd
     secnports_path = os.path.join(ROOT_DIR, "SecNport")
     os.makedirs(secnports_path, exist_ok=True)
     
@@ -2813,7 +2840,7 @@ def main(search_keywords, verbose=False, search_for_swaps=False):
         pd.DataFrame(columns=headers).to_csv(csvfile, index=False, header=True, mode='w')
 
         if verbose:
-            with tqdm(total=len(zip_files), desc="Files Processed", unit="file") as file_progress:
+            with tqdm.tqdm(total=len(zip_files), desc="Files Processed", unit="file") as file_progress:
                 with ProcessPoolExecutor() as executor:
                     futures = [executor.submit(process_file, file, search_terms, verbose, search_for_swaps) for file in zip_files]
 
