@@ -1,6 +1,7 @@
 # XRT Trading Data Analysis
 
-This directory contains analysis of XRT (Total Return Swaps) trading data from January 2025.
+This directory contains analysis of XRT (Total Return Swaps) trading data from January 2025. This repo is a test on  data from SECthingv2, thanks to artpersonnft for a giving us something really powerful and easy to use!
+
 
 ## Directory Structure
 
@@ -77,3 +78,44 @@ it will auto install the required modules, and query for which archives to downl
 almost everythings broken at the moment after that, but, AI is a very powerful tool on how to understand the filings inside the archives.
 explore, poke around in the, and look things up. 
 make learning great again :)
+
+What the original does;
+
+Getting Files
+
+Different ways to download each type of file
+Can download multiple files at once
+Tries again if downloads fail
+Handles network problems
+Processing Files
+
+Handles ZIP files efficiently
+Reads CSV and TSV files
+Processes files in chunks
+Can work on multiple files at once
+Searching Files
+
+Flexible search options
+Pattern matching
+Cross-checks between different files
+Combines results
+
+Reliability
+
+Handles errors well
+Verifies downloads
+Checks data is correct
+Recovers from problems
+Speed
+
+Works on multiple things at once
+Uses memory efficiently
+Cleans up after itself
+Shows progress
+
+Flexibility
+
+Works with many file types
+Configurable search options
+Different output formats
+Works on different computers
