@@ -1,6 +1,6 @@
 # XRT Trading Data Analysis
 
-This directory contains analysis of XRT (Total Return Swaps) trading data from January 2025. This repo is a test on  data from SECthingv2, thanks to artpersonnft for a giving us something really powerful and easy to use!
+ThThis repo is a test on  data from SECthingv2, thanks to artpersonnft for a giving us something really powerful and easy to use!
 
 
 ## Directory Structure
